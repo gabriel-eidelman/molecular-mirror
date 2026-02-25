@@ -1,0 +1,6 @@
+torch>=2.0.0
+torch-geometric>=2.3.0
+rdkit          # Essential for molecular fingerprints/SMILES strings
+pandas
+scikit-learn   # For t-SNE and KNN search
+ag2[openai]
