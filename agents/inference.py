@@ -1,36 +1,70 @@
+"""
+Inference utilities for Molecular Mirror.
+
+Loads the pre-computed 128-dim GATv2 embeddings at import time and exposes
+`get_molecular_mirrors` for use both directly and as an AG2 agent tool.
+
+The embeddings are dimension-agnostic: this file works with any checkpoint
+produced by model/train.py regardless of the configured EMBEDDING_DIM.
+"""
+
 from pathlib import Path
-import torch
-import pandas as pd
 from typing import Annotated
+
+import pandas as pd
+import torch
+import torch.nn.functional as F
 
 ROOT = Path(__file__).parent.parent
 
-z = torch.load(ROOT / 'artifacts/ingredient_embeddings.pt')
-nodes = pd.read_csv(ROOT / 'data/nodes_191120.csv')
+# Load once at module import — avoids reloading on every agent tool call.
+z     = torch.load(ROOT / "artifacts/ingredient_embeddings.pt", weights_only=True)
+nodes = pd.read_csv(ROOT / "data/nodes_191120.csv")
 
-def get_molecular_mirrors(target_name: Annotated[str, "the name of the food item"], top_k=5):
-    # 1. Find the index of your target ingredient
-    try:
-        target_idx = nodes[nodes['name'].str.contains(target_name, case=False)].index[0]
-        actual_name = nodes.iloc[target_idx]['name']
-    except IndexError:
+_EMBED_DIM = z.shape[1]  # 128 with the GATv2 encoder
+
+
+def get_molecular_mirrors(
+    target_name: Annotated[str, "name of the food ingredient to find mirrors for"],
+    top_k: int = 5,
+) -> list[tuple[str, float]] | str:
+    """
+    Find the ``top_k`` most molecularly similar ingredients to ``target_name``
+    using cosine similarity in the GATv2 latent space.
+
+    Parameters
+    ----------
+    target_name : str
+        Full or partial ingredient name (case-insensitive substring match).
+    top_k : int
+        Number of nearest neighbours to return (default 5).
+
+    Returns
+    -------
+    List of (ingredient_name, similarity_score) tuples, or an error string
+    if the ingredient is not found.
+    """
+    # 1. Locate target node (case-insensitive substring match)
+    matches = nodes[nodes["name"].str.contains(target_name, case=False, na=False)]
+    if matches.empty:
         return f"Ingredient '{target_name}' not found in FlavorGraph."
 
-    # 2. Get the latent vector (embedding) for the target
-    target_vec = z[target_idx].unsqueeze(0)  # Shape [1, 64]
+    target_idx  = matches.index[0]
+    actual_name = nodes.iloc[target_idx]["name"]
 
-    # 3. Calculate Cosine Similarity against ALL other nodes
-    similarities = torch.nn.functional.cosine_similarity(target_vec, z)
+    # 2. Cosine similarity against all nodes in the {_EMBED_DIM}-dim space
+    target_vec  = z[target_idx].unsqueeze(0)          # [1, embed_dim]
+    similarities = F.cosine_similarity(target_vec, z)  # [N]
 
-    # 4. Get the top-K matches
+    # 3. Top-(k+1) to skip the target itself (index 0 after sorting)
     values, indices = torch.topk(similarities, k=top_k + 1)
 
-    print(f"\n--- Molecular Mirrors for: {actual_name} ---")
-    results = []
-    for i in range(1, len(indices)):  # Start at 1 to skip the target itself
-        node_name = nodes.iloc[indices[i].item()]['name']
-        score = values[i].item()
-        results.append((node_name, score))
-        print(f"{i}. {node_name} (Similarity: {score:.4f})")
+    print(f"\n--- Molecular Mirrors for: {actual_name} (embed_dim={_EMBED_DIM}) ---")
+    results: list[tuple[str, float]] = []
+    for rank in range(1, len(indices)):   # skip rank 0 (the target itself)
+        name  = nodes.iloc[indices[rank].item()]["name"]
+        score = values[rank].item()
+        results.append((name, score))
+        print(f"  {rank}. {name}  (similarity: {score:.4f})")
 
     return results
