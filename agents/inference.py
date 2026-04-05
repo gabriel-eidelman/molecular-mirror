@@ -1,10 +1,12 @@
+from pathlib import Path
 import torch
 import pandas as pd
-from typing import Annotated, Literal
+from typing import Annotated
 
-# Load the data you just generated
-z = torch.load('ingredient_embeddings.pt')
-nodes = pd.read_csv('inputs/nodes_191120.csv')
+ROOT = Path(__file__).parent.parent
+
+z = torch.load(ROOT / 'artifacts/ingredient_embeddings.pt')
+nodes = pd.read_csv(ROOT / 'data/nodes_191120.csv')
 
 def get_molecular_mirrors(target_name: Annotated[str, "the name of the food item"], top_k=5):
     # 1. Find the index of your target ingredient
@@ -15,10 +17,9 @@ def get_molecular_mirrors(target_name: Annotated[str, "the name of the food item
         return f"Ingredient '{target_name}' not found in FlavorGraph."
 
     # 2. Get the latent vector (embedding) for the target
-    target_vec = z[target_idx].unsqueeze(0) # Shape [1, 64]
+    target_vec = z[target_idx].unsqueeze(0)  # Shape [1, 64]
 
     # 3. Calculate Cosine Similarity against ALL other nodes
-    # Cosine similarity is better than Euclidean distance for high-dimensional embeddings
     similarities = torch.nn.functional.cosine_similarity(target_vec, z)
 
     # 4. Get the top-K matches
@@ -26,14 +27,10 @@ def get_molecular_mirrors(target_name: Annotated[str, "the name of the food item
 
     print(f"\n--- Molecular Mirrors for: {actual_name} ---")
     results = []
-    for i in range(1, len(indices)): # Start at 1 to skip the target itself
+    for i in range(1, len(indices)):  # Start at 1 to skip the target itself
         node_name = nodes.iloc[indices[i].item()]['name']
-        node_group = nodes.iloc[indices[i].item()]['node_type'] # Check if it's 'ingr'
         score = values[i].item()
         results.append((node_name, score))
         print(f"{i}. {node_name} (Similarity: {score:.4f})")
-    
-    return results
 
-# Test it out! Try 'beef', 'butter', 'egg', or 'milk'
-get_molecular_mirrors("milk")
+    return results

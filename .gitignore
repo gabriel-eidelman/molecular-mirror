@@ -1,2 +1,4 @@
-inputs/
+data/
+artifacts/
 .env
+venv/

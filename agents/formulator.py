@@ -4,7 +4,7 @@ from autogen import ConversableAgent, LLMConfig
 from autogen.agentchat import initiate_group_chat
 from autogen.agentchat.group import FunctionTarget
 from autogen.agentchat.group.patterns import DefaultPattern
-from inference import get_molecular_mirrors
+from agents.inference import get_molecular_mirrors
 
 from dotenv import load_dotenv
 load_dotenv()
